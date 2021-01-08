@@ -19,14 +19,20 @@ namespace System.Net
 
         private readonly int localIP4;
         private readonly int remoteIP4;
+
+        private byte[]? localIP6;
+        private byte[]? remoteIP6;
+
         private readonly short localPort;
         private readonly short remotePort;
         private readonly int _portOffset;
         private readonly NetCapture _pcap;
+        private readonly bool useIPv6;
         
         private long localSequence;
         private long remoteSequence;
-        private Packet4 _packet;
+        private Packet4 _packet4;
+        private Packet6 _packet6;
         
         [StructLayout(LayoutKind.Sequential)]
         private struct PacketHeader
@@ -65,6 +71,28 @@ namespace System.Net
             }
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal unsafe struct IPv6Header
+        {
+            public byte VersionAndClass;
+            public byte Class2;
+            public ushort Flow;
+            public ushort PayloadLength;
+            public byte NextHeader;
+            public byte HopLimit;
+            public fixed byte src[16];
+            public fixed byte dst[16];
+
+            internal IPv6Header(IPAddress srcIP, IPAddress dstIP)
+            {
+                VersionAndClass = 0x60;
+                Class2 = 0;
+                PayloadLength = Flow = 0;
+                NextHeader = 6;
+                HopLimit = 64;
+            }
+        }
+
         [Flags]
         internal enum TcpFlags : byte
         {
@@ -98,40 +126,82 @@ namespace System.Net
             public TcpHeader tcpHeader;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Packet6
+        {
+            public PacketHeader packetHeader;
+            public int link;
+            public IPv6Header ipHeader;
+            public TcpHeader tcpHeader;
+        }
+
         private unsafe void WriteTcpPacket(TcpFlags flags, ReadOnlySpan<byte> data, bool isResponse = false)
         {
             lock (_pcap)
             {
+                ref PacketHeader packetHeader = ref (useIPv6 ? ref _packet6.packetHeader : ref _packet4.packetHeader);
+                ref TcpHeader tcpHeader = ref (useIPv6 ? ref _packet6.tcpHeader : ref _packet4.tcpHeader);
+
                 long now = Environment.TickCount64;
-                _packet.packetHeader.ts_sec = (uint)(now / 10_0000);
-                _packet.packetHeader.incl_len = (uint)(4 + sizeof(IPv4Header) + sizeof(TcpHeader) + data.Length);
-                _packet.packetHeader.orig_len = _packet.packetHeader.incl_len;
+                packetHeader.ts_sec = (uint)(now / 10_0000);
+                packetHeader.incl_len = (uint)(4 + (useIPv6 ? sizeof(IPv6Header) : sizeof(IPv4Header)) + sizeof(TcpHeader) + data.Length);
+                packetHeader.orig_len = packetHeader.incl_len;
 
-                _packet.ipHeader.src = isResponse ? remoteIP4 : localIP4;
-                _packet.ipHeader.dst = isResponse ? localIP4 : remoteIP4;
-                _packet.ipHeader.TotalLength = (ushort)IPAddress.HostToNetworkOrder((short)(sizeof(IPv4Header) + sizeof(TcpHeader) + data.Length));
+                if (useIPv6)
+                {
+                    _packet6.ipHeader.PayloadLength = (ushort)IPAddress.HostToNetworkOrder((short)(sizeof(TcpHeader) + data.Length));
+                    fixed (byte* ptr = _packet6.ipHeader.src)
+                    {
+                        if (isResponse)
+                        {
+                            remoteIP6.CopyTo(new Span<byte>(ptr, remoteIP6!.Length));
+                        }
+                        else
+                        {
+                            localIP6.CopyTo(new Span<byte>(ptr, localIP6!.Length));
+                        }
+                    }
 
-                _packet.tcpHeader.Flags = flags;
+                    fixed (byte* ptr = _packet6.ipHeader.dst)
+                    {
+                        if (isResponse)
+                        {
+                            localIP6.CopyTo(new Span<byte>(ptr, localIP6!.Length));
+                        }
+                        else
+                        {
+                            remoteIP6.CopyTo(new Span<byte>(ptr, remoteIP6!.Length));
+                        }
+                    }
+                }
+                else
+                {
+                    _packet4.ipHeader.src = isResponse ? remoteIP4 : localIP4;
+                    _packet4.ipHeader.dst = isResponse ? localIP4 : remoteIP4;
+                    _packet4.ipHeader.TotalLength = (ushort)IPAddress.HostToNetworkOrder((short)(sizeof(IPv4Header) + sizeof(TcpHeader) + data.Length));
+                }
+
+                tcpHeader.Flags = flags;
 
                 ref long sequence = ref localSequence;
                 long ack;
                 if (isResponse)
                 {
-                    _packet.tcpHeader.sport = remotePort;
-                    _packet.tcpHeader.dport = localPort;
+                    tcpHeader.sport = remotePort;
+                    tcpHeader.dport = localPort;
                     sequence = ref remoteSequence;
                     ack = localSequence + 1;
                     ack = localSequence;
                 }
                 else
                 {
-                    _packet.tcpHeader.sport = localPort;
-                    _packet.tcpHeader.dport = remotePort;
+                    tcpHeader.sport = localPort;
+                    tcpHeader.dport = remotePort;
                     sequence = ref localSequence;
                     ack = remoteSequence;
                 }
   
-                _packet.tcpHeader.SequenceNumber = (uint)IPAddress.HostToNetworkOrder((int)sequence);
+                tcpHeader.SequenceNumber = (uint)IPAddress.HostToNetworkOrder((int)sequence);
                 sequence += data.Length;
                 if (sequence > uint.MaxValue)
                 {
@@ -151,19 +221,32 @@ namespace System.Net
 
                 if ((flags & TcpFlags.Ack) == TcpFlags.Ack)
                 {
-                    _packet.tcpHeader.AcknowledgmentNumber = (uint)IPAddress.HostToNetworkOrder((int)ack);
+                    tcpHeader.AcknowledgmentNumber = (uint)IPAddress.HostToNetworkOrder((int)ack);
                 }
 
 
                 // TBD: fix up Checksum;
 
-                fixed (void* ptr = &_packet)
+                if (useIPv6)
                 {
-                    _pcap.fs.Write(new ReadOnlySpan<byte>(ptr, sizeof(Packet4)));
-                    if (data.Length > 0)
+                    fixed (void* ptr = &_packet6)
                     {
-                        _pcap.fs.Write(data);
+                        _pcap.fs.Write(new ReadOnlySpan<byte>(ptr, sizeof(Packet6)));
+
                     }
+                }
+                else
+                {
+                    fixed (void* ptr = &_packet4)
+                    {
+                        _pcap.fs.Write(new ReadOnlySpan<byte>(ptr, sizeof(Packet4)));
+
+                    }
+                }
+
+                if (data.Length > 0)
+                {
+                    _pcap.fs.Write(data);
                 }
             }
         }
@@ -176,24 +259,37 @@ namespace System.Net
 
             if (localEndPoint.AddressFamily == AddressFamily.InterNetworkV6 && !localEndPoint.Address.IsIPv4MappedToIPv6)
             {
-                // TBD support IPv6
-                localEndPoint = new IPEndPoint(IPAddress.Loopback, localEndPoint.Port);
-                remoteEndPoint = new IPEndPoint(IPAddress.Loopback, remoteEndPoint.Port);
+                useIPv6 = true;
+                _packet6.link = 30;
+
+                _packet6.ipHeader = new IPv6Header(localEndPoint.Address, remoteEndPoint.Address);
+                _packet6.ipHeader.Flow = (ushort)_pcap.rnd.Next(0, ushort.MaxValue);
+
+                localIP6 = new byte[16];
+                remoteIP6 = new byte[16];
+                int len;
+                localEndPoint.Address.TryWriteBytes(localIP6, out len);
+                remoteEndPoint.Address.TryWriteBytes(remoteIP6, out len);
+            }
+            else
+            {
+                _packet4.link = 2;
+                _packet4.ipHeader = new IPv4Header(localEndPoint.Address.MapToIPv4(), remoteEndPoint.Address.MapToIPv4());
+#pragma warning disable 0618
+                localIP4 = (int)localEndPoint.Address.MapToIPv4().Address;
+                remoteIP4 = (int)remoteEndPoint.Address.MapToIPv4().Address;
+#pragma warning restore 0618
             }
 
-            _packet.link = 2;
-            _packet.ipHeader = new IPv4Header(localEndPoint.Address.MapToIPv4(), remoteEndPoint.Address.MapToIPv4());
-#pragma warning disable 0618
-            localIP4 = (int)localEndPoint.Address.MapToIPv4().Address;
-            remoteIP4 = (int)remoteEndPoint.Address.MapToIPv4().Address;
-#pragma warning restore 0618
+
             localPort = IPAddress.HostToNetworkOrder((short)localEndPoint.Port);
             remotePort = IPAddress.HostToNetworkOrder((short)(remoteEndPoint.Port + _portOffset));
             localSequence = _pcap.rnd.Next(int.MaxValue);
             remoteSequence = _pcap.rnd.Next(int.MaxValue);
-            
-            _packet.tcpHeader.Offset = 0x50;
-            _packet.tcpHeader.WindowSize = ushort.MaxValue;
+
+            ref TcpHeader tcpHeader = ref (useIPv6 ? ref _packet6.tcpHeader : ref _packet4.tcpHeader);
+            tcpHeader.Offset = 0x50;
+            tcpHeader.WindowSize = ushort.MaxValue;
 
             // fake handsake
             WriteTcpPacket(TcpFlags.Syn, ReadOnlySpan<byte>.Empty);
