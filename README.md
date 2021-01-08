@@ -20,6 +20,22 @@ For HttpCLient the base use case is like
 It will try to detect transport paramaters, add IP and TCP headersw and it will write each Read or Write as a "packet". If transport IPEndpoints cannot be determined, it will use `127.0.0.1` addresses and generated TCP ports. IPEndpoiunt can also be handed explicitly to `AddStream` method. 
 To make decoding easier, PcapStream will add 8400 to detected destination port. With that, connection to port 443 will be shown as 8843 in capture file. Without it Wireshark will have problems decoding the stream. 8843 is not used by well known protocos and it easy to set a default rule and decode 8843 automaticaly as HTTP. (or what ever). This behavir can be changed by passing `portOffset: 0` to `AddStream`.
 
+```c#
+namespace System.Net
+{
+    public class PcapStream : Stream
+    {
+        ...
+    }
+    
+    public class NetCapture : IDisposable
+    {
+        public NetCapture(string fileName);
+        public NetCapture(Stream stream);
+        public PcapStream AddStream(Stream stream, IPEndPoint? localEndPoint = null, IPEndPoint? remoteEndPoint = null, int portOffset = defaultPortOffset)
+    }
+}
+```
 # TODO list and BUGS:
 - IPv6 support. 
   - IPv4 mapped addresses from dual mode socket will be shown as IPv4
