@@ -10,19 +10,25 @@ namespace PCapStreamTest
     {
         static async Task Main(string[] args)
         {
-            string host = "google.com";
+            string dst = "https://google.com/";
             if (args.Length > 0)
             {
-                host = args[0];
+                dst = args[0];
             }
 
-            using var capture = new NetCapture($"{host}.pcap");
+            var uri = new Uri(dst);
+
+            using var capture = new NetCapture($"{uri.Host}.pcap");
 
             var handler = new SocketsHttpHandler();
-            handler.PlaintextStreamFilter = (context, token) => { return new ValueTask<Stream>(capture.AddStream(context.PlaintextStream)); };
+            handler.PlaintextStreamFilter = (context, token) =>
+            {
+                return new ValueTask<Stream>(capture.AddStream(context.PlaintextStream));
+            };
+
             using (HttpClient client = new HttpClient(handler))
             {
-                var message = new HttpRequestMessage(HttpMethod.Get, new Uri($"https://{host}/"));
+                var message = new HttpRequestMessage(HttpMethod.Get, uri);
                 message.Version = args.Length > 1 ? new Version(2, 0) : new Version(1, 1);
                 //  message.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
 

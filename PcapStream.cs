@@ -13,7 +13,6 @@ namespace System.Net
 {
     public class PcapStream : Stream
     {
-        
         private Stream _innerStream;
         internal Stream InnerStream => _innerStream;
 
@@ -28,12 +27,12 @@ namespace System.Net
         private readonly int _portOffset;
         private readonly NetCapture _pcap;
         private readonly bool useIPv6;
-        
+
         private long localSequence;
         private long remoteSequence;
         private Packet4 _packet4;
         private Packet6 _packet6;
-        
+
         [StructLayout(LayoutKind.Sequential)]
         private struct PacketHeader
         {
@@ -411,7 +410,7 @@ namespace System.Net
             public int snaplen;        /* max length of captured packets, in octets */
             public int network;        /* data link type */
         }
-   
+
         internal readonly Stream fs;
         internal readonly Random rnd;
         private int streamCounter = 1024;
