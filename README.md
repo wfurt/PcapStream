@@ -17,7 +17,7 @@ For HttpCLient the base use case is like
   }
 ```
 
-It will try to detect transport paramaters, add IP and TCP headersw and it will write each Read or Write as a "packet". If transport IPEndpoints cannot be determined, it will use `127.0.0.1` addresses and generated TCP ports. IPEndpoiunt can also be handed explicitly to `AddStream` method. 
+It will try to detect transport parameters, add IP and TCP headers and it will write each Read or Write as a "packet". If transport IPEndpoints cannot be determined, it will use `127.0.0.1` addresses and generated TCP ports. IPEndpoiunt can also be handed explicitly to `AddStream` method. 
 To make decoding easier, PcapStream will add 8400 to detected destination port. With that, connection to port 443 will be shown as 8843 in capture file. Without it Wireshark will have problems decoding the stream. 8843 is not used by well known protocos and it easy to set a default rule and decode 8843 automaticaly as HTTP. (or what ever). This behavir can be changed by passing `portOffset: 0` to `AddStream`.
 
 ```c#
@@ -37,14 +37,11 @@ namespace System.Net
 }
 ```
 # TODO list and BUGS:
-- IPv6 support. 
-  - IPv4 mapped addresses from dual mode socket will be shown as IPv4
-  - Pure IPv6 will be convereted loopback IPV4 for now (as unknown/unsupported EndPoint)
 - TCP Ack needs more work
-  - This works now for simple and reasonably small request/responces
-  - For large unidirectional streems we will need to inject extra ACK packets to keep Wireshark calulations happy
+  - This works now for simple and reasonably small request/responses
+  - For large unidirectional streams we will need to inject extra ACK packets to keep Wireshark calculations happy
 - no checksums
   - neither IP headers nor TCP has checksum fields filled
-  - that seems OK at the moment as Wiresark assuems HW support and does not complain much
+  - that seems OK at the moment as Wireshark assumes HW support and does not complain much
 - needs more testing
   
