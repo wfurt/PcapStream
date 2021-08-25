@@ -1,9 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Copyright>MIT</Copyright>
+    <PackageProjectUrl>https://github.com/wfurt/PcapStream</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/wfurt/PcapStream</RepositoryUrl>
   </PropertyGroup>
 
 </Project>
