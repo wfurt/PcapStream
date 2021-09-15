@@ -36,6 +36,9 @@ namespace System.Net
     }
 }
 ```
+
+NuGet package available https://www.nuget.org/packages/PcapStream/
+
 # TODO list and BUGS:
 - TCP Ack needs more work
   - This works now for simple and reasonably small request/responses
