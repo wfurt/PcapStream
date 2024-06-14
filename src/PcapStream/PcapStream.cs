@@ -141,8 +141,9 @@ namespace System.Net
                 ref PacketHeader packetHeader = ref (useIPv6 ? ref _packet6.packetHeader : ref _packet4.packetHeader);
                 ref TcpHeader tcpHeader = ref (useIPv6 ? ref _packet6.tcpHeader : ref _packet4.tcpHeader);
 
-                long now = Environment.TickCount64;
-                packetHeader.ts_sec = (uint)(now / 10_0000);
+                var now = DateTimeOffset.UtcNow;
+                packetHeader.ts_sec = (uint)now.ToUnixTimeSeconds();
+                packetHeader.ts_usec = (uint)((now.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks) / TimeSpan.TicksPerMicrosecond) % 1_000_000;
                 packetHeader.incl_len = (uint)(4 + (useIPv6 ? sizeof(IPv6Header) : sizeof(IPv4Header)) + sizeof(TcpHeader) + data.Length);
                 packetHeader.orig_len = packetHeader.incl_len;
 
